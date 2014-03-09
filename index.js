@@ -17,6 +17,7 @@ var express = require('express')
   , app = express.application
   , en = lingo.en;
 
+var DATA_STORE_KEY_NAME = 'loaded';
 /**
  * Pre-defined action ordering.
  */
@@ -54,7 +55,6 @@ function Resource(name, actions, app) {
   actions = actions || {};
   this.base = actions.base || '/';
   if ('/' != this.base[this.base.length - 1]) this.base += '/';
-  this.format = actions.format;
   this.id = actions.id || this.defaultId;
   this.param = ':' + this.id;
 
@@ -87,16 +87,11 @@ Resource.prototype.load = function(fn){
       // TODO: ideally we should next() passed the
       // route handler
       if (null == obj) return res.send(404);
-      req[id] = obj;
+      req[DATA_STORE_KEY_NAME][id] = obj;
       next();
     };
     
-    // Maintain backward compatibility
-    if (2 == fn.length) {
-      fn(req.params[id], callback);
-    } else {
-      fn(req, req.params[id], callback);
-    }
+    fn(req.params[id], req, res, callback);
   });
 
   return this;
@@ -140,7 +135,6 @@ Resource.prototype.map = function(method, path, fn){
   var route = this.base + (this.name || '');
   if (this.name && path) route += '/';
   route += path;
-  route += '.:format?';
 
   // register the route so we may later remove it
   (this.routes[method] = this.routes[method] || {})[route] = {
@@ -151,19 +145,7 @@ Resource.prototype.map = function(method, path, fn){
   };
 
   // apply the route
-  this.app[method](route, function(req, res, next){
-    req.format = req.params.format || req.format || self.format;
-    if (req.format) res.type(req.format);
-    if ('object' == typeof fn) {
-      if (fn[req.format]) {
-        fn[req.format](req, res, next);
-      } else {
-        res.format(fn);
-      }
-    } else {
-      fn(req, res, next);
-    }
-  });
+  this.app[method](route, fn);
 
   return this;
 };
@@ -265,6 +247,7 @@ methods.concat(['del', 'all']).forEach(function(method){
  * @api public
  */
 
+express.request[DATA_STORE_KEY_NAME] = {};
 app.resource = function(name, actions, opts){
   var options = actions || {};
   if ('object' == typeof name) actions = name, name = null;
